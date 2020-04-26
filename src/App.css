@@ -1,19 +1,28 @@
-.App {
-  text-align: center;
+.captureButton{
+  margin-top: 20px;
+  padding: 10px;
+  padding-left: 20px;
+  padding-right: 20px;
+  background-color: #0066B2;
+  color: white;
+  border-radius: 5px;
 }
 
-.App-logo {
-  height: 80px;
+.deleteButton{
+  margin-top: 20px;
+  padding: 10px;
+  padding-left: 20px;
+  padding-right: 20px;
+  background-color: #D77623;
+  color: white;
+  border-radius: 5px;
 }
 
-.App-header {
-  height: 150px;
-}
-
-.App-title {
-  font-size: 1.5em;
-}
-
-.App-intro {
-  font-size: large;
+.imageCanvas{
+  margin-top: 20px;
+  width: 100%;
+  /* height: 200px; */
+  /* object-fit: cover; */
+  display: flex;
+  justify-content: center;
 }
