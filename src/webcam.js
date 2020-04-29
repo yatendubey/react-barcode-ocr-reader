@@ -20,7 +20,6 @@ export class Webcam {
                     .then((mediaStream) => {
                         if ("srcObject" in this.webcamElement) {
                             this.webcamElement.srcObject = mediaStream;
-                            console.log('here');
                         } else {
                             // For older browsers withouth the srcObject.
                             this.webcamElement.src = window.URL.createObjectURL(mediaStream);

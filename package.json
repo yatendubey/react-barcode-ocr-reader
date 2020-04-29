@@ -6,6 +6,7 @@
     "axios": "^0.19.2",
     "classnames": "^2.2.6",
     "cloudinary-react": "^1.4.0",
+    "quagga": "^0.12.1",
     "react": "^16.10.2",
     "react-dom": "^16.10.2",
     "react-scripts": "3.2.0",
