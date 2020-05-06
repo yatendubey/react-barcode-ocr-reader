@@ -14,8 +14,6 @@ class App extends Component {
     super();
     this.state = {
       capturedImage: null,
-      captured: false,
-      uploading: false,
       SenderAddress: "",
       ReceiverAddress: "",
       barcode: "",
@@ -48,35 +46,33 @@ class App extends Component {
 
   discardImage = () => {
     this.setState({
-      captured: false,
       capturedImage: null,
       SenderAddress: "",
       ReceiverAddress: "",
       barcode: "",
-      progress: 0
+      progress: 0,
     });
   };
 
   doOCR = async () => {
-    const croppedImage = await getCroppedImg(
-      label,
-      this.state.croppedAreaPixels
-    );
+    console.log(this.state.croppedAreaPixels);
+    const croppedImage = await getCroppedImg(label, {
+      width: 864,
+      height: 864,
+      x: 1513,
+      y: 864,
+    });
     this.setState({ croppedImage: croppedImage }, () => {
-      console.log(this.state.croppedImage)
       Quagga.decodeSingle(
         {
           decoder: {
             readers: ["code_128_reader"], // List of active readers
           },
           locate: true, // try to locate the barcode in the image
-          // src: this.state.capturedImage, // or 'data:image/jpg;base64,' + data
           src: this.state.croppedImage,
         },
         (result) => {
-          console.log(result);
           if (result) {
-            console.log("result", result.codeResult.code);
             this.setState({ barcode: result.codeResult.code });
           } else {
             console.log("not detected");
@@ -103,12 +99,11 @@ class App extends Component {
     for (let i = 0; i < rectangles.length; i++) {
       const {
         data: { text },
-      } = await this.worker.recognize(label, {
+      } = await this.worker.recognize(this.state.image, {
         rectangle: rectangles[i],
       });
       values.push(text);
     }
-    console.log(values);
     await this.worker.terminate();
 
     this.setState({
@@ -164,14 +159,13 @@ class App extends Component {
               style={{ position: "relative", width: "400px", height: "400px" }}
             >
               <Cropper
-                image={this.state.image}
-                crop={this.state.crop}
-                zoom={this.state.zoom}
+                image={this.state.capturedImage}
                 aspect={this.state.aspect}
                 onCropChange={this.onCropChange}
                 onCropComplete={this.onCropComplete}
                 onZoomChange={this.onZoomChange}
               />
+              <img src={label} width="400px" height="400px" alt=" "/>
             </div>
           </div>
         ) : (
