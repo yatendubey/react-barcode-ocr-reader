@@ -1,183 +1,341 @@
 import React, { Component } from "react";
 import "./App.css";
-import { createWorker } from "tesseract.js";
+import { createWorker, createScheduler } from "tesseract.js";
 import Quagga from "quagga";
 import label from "./assets/label.jpg";
-import Camera, { FACING_MODES, IMAGE_TYPES } from "react-html5-camera-photo";
-import "react-html5-camera-photo/build/css/index.css";
+import CameraPhoto, { FACING_MODES } from "jslib-html5-camera-photo";
 import Progress from "react-progressbar";
-import Cropper from "react-easy-crop";
-import getCroppedImg from "./cropImage";
 
 class App extends Component {
   constructor() {
     super();
+    this.cameraPhoto = null;
+    this.videoRef = React.createRef();
     this.state = {
-      capturedImage: null,
+      dataUri: "",
+      scanning: false,
+      capturedImage: [],
       SenderAddress: "",
       ReceiverAddress: "",
       barcode: "",
-      progress: 0,
+      progress1: 0,
+      progress2: 0,
       croppedImage: "",
-
+      progressText: "",
+      textConfidence: null,
       image: label,
       crop: { x: 0, y: 0 },
       zoom: 3,
       aspect: 1,
       croppedAreaPixels: null,
+      courierService: null,
     };
 
-    this.worker = createWorker({
+    this.scheduler = createScheduler();
+    this.worker1 = createWorker({
       logger: (m) => {
-        if (m.status === "recognizing text") {
-          console.log(m);
-          this.setState({
-            progress: m.progress * 100,
-          });
-        }
+        // if (m.status === "recognizing text") {
+        console.log(m);
+        this.setState({
+          progress1: m.progress,
+          progressText: m.status,
+        });
+        // }
+      },
+    });
+    this.worker2 = createWorker({
+      logger: (m) => {
+        // if (m.status === "recognizing text") {
+        console.log(m);
+        this.setState({
+          progress2: m.progress,
+          progressText: m.status,
+        });
+        // }
       },
     });
   }
 
-  handleTakePhoto = (dataUri) => {
-    // Do stuff with the photo...
-    this.setState({ capturedImage: dataUri });
+  componentDidMount() {
+    // We need to instantiate CameraPhoto inside componentDidMount because we
+    // need the refs.video to get the videoElement so the component has to be
+    // mounted.
+    this.cameraPhoto = new CameraPhoto(this.videoRef.current);
+    // console.log(this.cameraPhoto)
+    this.loadResources();
+  }
+
+  loadResources = async () => {
+    await this.worker1.load();
+    await this.worker2.load();
+    await this.worker1.loadLanguage("eng");
+    await this.worker2.loadLanguage("eng");
+    await this.worker1.initialize("eng");
+    await this.worker2.initialize("eng");
+
+    await this.scheduler.addWorker(this.worker1);
+    await this.scheduler.addWorker(this.worker2);
   };
 
-  discardImage = () => {
-    this.setState({
-      capturedImage: null,
-      SenderAddress: "",
-      ReceiverAddress: "",
-      barcode: "",
-      progress: 0,
-    });
+  startCamera(idealFacingMode, idealResolution) {
+    this.cameraPhoto
+      .startCamera(idealFacingMode, idealResolution)
+      .then(() => {
+        console.log("camera is started !");
+      })
+      .catch((error) => {
+        console.error("Camera not started!", error);
+      });
+  }
+
+  startCameraMaxResolution = async (idealFacingMode) => {
+    this.cameraPhoto
+      .startCameraMaxResolution(idealFacingMode)
+      .then(() => {
+        console.log("camera is started !");
+      })
+      .catch((error) => {
+        console.error("Camera not started!", error);
+      });
   };
 
-  doOCR = async () => {
-    console.log(this.state.croppedAreaPixels);
-    const croppedImage = await getCroppedImg(label, {
-      width: 864,
-      height: 864,
-      x: 1513,
-      y: 864,
-    });
-    this.setState({ croppedImage: croppedImage }, () => {
-      Quagga.decodeSingle(
-        {
-          decoder: {
-            readers: ["code_128_reader"], // List of active readers
+  scan() {
+    this.setState({ scanning: !this.state.scanning });
+  }
+
+  stopCamera() {
+    this.cameraPhoto
+      .stopCamera()
+      .then(() => {
+        console.log("Camera stoped!");
+      })
+      .catch((error) => {
+        console.log("No camera to stop!:", error);
+      });
+  }
+
+  startProcessing = async () => {
+    Quagga.init(
+      {
+        inputStream: {
+          name: "Live",
+          type: "LiveStream",
+          constraints: {
+            width: window.innerWidth,
+            height: window.innerHeight,
+            facingMode: "environment", // or user
           },
-          locate: true, // try to locate the barcode in the image
-          src: this.state.croppedImage,
         },
-        (result) => {
-          if (result) {
-            this.setState({ barcode: result.codeResult.code });
-          } else {
-            console.log("not detected");
+        locator: {
+          patchSize: "medium",
+          halfSample: true,
+        },
+        numOfWorkers: 2,
+        decoder: {
+          readers: ["code_128_reader"],
+        },
+        locate: true,
+      },
+      (err) => {
+        console.log(this.state.scanning);
+        if (this.state.scanning) {
+          Quagga.start();
+        }
+      }
+    );
+    Quagga.onDetected(this.onDetected.bind(this));
+  };
+
+  doOCR = async (image) => {
+    const scannedData = await this.worker1.recognize(image);
+    console.log(scannedData.data.text);
+    scannedData.data.text.search("Amazon");
+    if (scannedData.data.confidence > 60) {
+      if (scannedData.data.text.includes("Amazon")) {
+        this.setState({ courierService: "Amazon" });
+        const rectangles = [
+          { left: 23, top: 84, width: 254, height: 170 },
+          {
+            left: 300,
+            top: 74,
+            width: 347,
+            height: 170,
+          },
+        ];
+        console.log(this.state.capturedImage);
+        const results = await Promise.all(
+          rectangles.map((rectangle) =>
+            this.scheduler.addJob("recognize", image, {
+              rectangle,
+            })
+          )
+        );
+        console.log(results.map((r) => r.data.text));
+        // await this.scheduler.terminate();
+
+        console.log(results);
+        this.setState(
+          {
+            SenderAddress: results[0]["data"].text,
+            ReceiverAddress: results[1]["data"].text,
+            textConfidence:
+              (results[0]["data"].confidence + results[1]["data"].confidence) /
+              2,
+          },
+          () => {
+            if (this.state.textConfidence < 60) {
+              if (
+                window.confirm(
+                  "Image is not clear. Please rescan",
+                  this.state.textConfidence
+                )
+              ) {
+                this.state.capturedImage.length = 0;
+              } else {
+              }
+            }else{
+              this.state.capturedImage.length = 0;
+            }
+          }
+        );
+      } else if (scannedData.data.text.includes("USPS")) {
+        this.setState({ courierService: "United States Postal Service" });
+        const rectangles = [
+          { left: 73, top: 44, width: 324, height: 90 },
+          {
+            left: 190,
+            top: 134,
+            width: 330,
+            height: 100,
+          },
+        ];
+        console.log(this.state.capturedImage);
+        const results = await Promise.all(
+          rectangles.map((rectangle) =>
+            this.scheduler.addJob("recognize", image, {
+              rectangle,
+            })
+          )
+        );
+        console.log(results.map((r) => r.data.text));
+        // await this.scheduler.terminate();
+
+        console.log(results);
+        this.setState(
+          {
+            SenderAddress: results[0]["data"].text,
+            ReceiverAddress: results[1]["data"].text,
+            textConfidence:
+              (results[0]["data"].confidence + results[1]["data"].confidence) /
+              2,
+          },
+          () => {
+            if (this.state.textConfidence < 60) {
+              if (
+                window.confirm(
+                  "Image is not clear. Please rescan",
+                  this.state.textConfidence
+                )
+              ) {
+                this.state.capturedImage.length = 0;
+              } else {
+              }
+            }else{
+              this.state.capturedImage.length = 0;
+            }
+          }
+        );
+      } else {
+        alert("CourierService not Detected");
+      }
+    } else {
+      if (
+        window.confirm(
+          "Image is not clear. Please Rescan",
+          this.state.textConfidence
+        )
+      ) {
+        this.state.capturedImage.length = 0;
+      }
+    }
+  };
+
+  onDetected(result) {
+    // Quagga.pause();
+    console.log(result);
+    const config = {
+      sizeFactor: 1,
+    };
+    let dataUri = this.cameraPhoto.getDataUri(config);
+
+    if (result.codeResult.code.length > 20) {
+      this.setState(
+        {
+          // scanning: false,
+          capturedImage: [...this.state.capturedImage, dataUri],
+          // barcode: result.codeResult.code.slice(8),
+          barcode: "9461211899564892895626"
+        },
+        () => {
+          if (this.state.capturedImage.length === 1) {
+            this.doOCR(this.state.capturedImage[0]);
           }
         }
       );
-    });
-
-    await this.worker.load();
-    await this.worker.loadLanguage("eng");
-    await this.worker.initialize("eng");
-
-    const rectangles = [
-      { left: 1560, top: 1066, width: 210, height: 122 },
-      {
-        left: 1900,
-        top: 1066,
-        width: 325,
-        height: 135,
-      },
-    ];
-
-    const values = [];
-    for (let i = 0; i < rectangles.length; i++) {
-      const {
-        data: { text },
-      } = await this.worker.recognize(this.state.image, {
-        rectangle: rectangles[i],
-      });
-      values.push(text);
+    } else {
+      this.setState(
+        {
+          // scanning: false,
+          capturedImage: [...this.state.capturedImage, dataUri],
+          barcode: result.codeResult.code,
+        },
+        () => {
+          if (this.state.capturedImage.length === 1) {
+            this.doOCR(this.state.capturedImage[0]);
+          }
+        }
+      );
     }
-    await this.worker.terminate();
-
-    this.setState({
-      SenderAddress: values[0],
-      ReceiverAddress: values[1],
-    });
-  };
-
-  onCropChange = (crop) => {
-    this.setState({ crop });
-  };
-
-  onCropComplete = (croppedArea, croppedAreaPixels) => {
-    this.setState({ croppedAreaPixels });
-  };
-
-  onZoomChange = (zoom) => {
-    this.setState({ zoom });
-  };
+  }
 
   render() {
-    const buttons = this.state.capturedImage ? (
-      <div>
-        <button className="deleteButton" onClick={this.discardImage}>
-          {" "}
-          Delete Photo{" "}
-        </button>
-        <button className="captureButton" onClick={this.doOCR}>
-          {" "}
-          Read Photo{" "}
-        </button>
-        <br />
-      </div>
-    ) : null;
-
     return (
-      <div>
-        <Camera
-          onTakePhoto={(dataUri) => {
-            this.handleTakePhoto(dataUri);
+      <div style={{ margin: 10 }}>
+        <div id="interactive" className="viewport">
+          <video ref={this.videoRef} autoPlay style={{ width: "100%" }} />
+          <canvas
+            className="drawingBuffer"
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+            }}
+          ></canvas>
+        </div>
+        <button
+          onClick={async () => {
+            let facingMode = FACING_MODES.USER;
+            this.scan();
+            setTimeout(() => {
+              this.startCameraMaxResolution(facingMode);
+              this.startProcessing();
+            }, 500);
           }}
-          idealFacingMode={FACING_MODES.ENVIRONMENT}
-          imageType={IMAGE_TYPES.JPG}
-          imageCompression={0}
-          isMaxResolution={true}
-          isFullscreen={false}
-          sizeFactor={1}
-          isImageMirror={false}
-        />
-        {this.state.capturedImage ? (
-          <div>
-            <div
-              style={{ position: "relative", width: "400px", height: "400px" }}
-            >
-              <Cropper
-                image={this.state.capturedImage}
-                aspect={this.state.aspect}
-                onCropChange={this.onCropChange}
-                onCropComplete={this.onCropComplete}
-                onZoomChange={this.onZoomChange}
-              />
-              <img src={label} width="400px" height="400px" alt=" "/>
-            </div>
-          </div>
-        ) : (
-          ""
-        )}
-        {buttons}
+        >
+          Open Scanner
+        </button>
         <br />
-        <Progress completed={this.state.progress} /> <br />
+        <h4>{this.state.progressText}</h4>
+        <Progress
+          completed={(this.state.progress1 + this.state.progress2) * 50}
+        />{" "}
+        <br />
         <div>
           <h3>---------------OCR---------------</h3>
+          <h3>Service: {this.state.courierService}</h3>
           <h3>Sender's Address: {this.state.SenderAddress}</h3>
           <h3>Receiver's Address: {this.state.ReceiverAddress}</h3>
+          <h3>confidence: {this.state.textConfidence}</h3>
 
           <h3>-------------BARCODE-------------</h3>
           <h3>Barcode Text: {this.state.barcode}</h3>
