@@ -2,7 +2,7 @@ import React, { Component } from "react";
 import "./App.css";
 import { createWorker, createScheduler } from "tesseract.js";
 import Quagga from "quagga";
-import label from "./assets/label.jpg";
+// import label from "./assets/label.jpg";
 import CameraPhoto, { FACING_MODES } from "jslib-html5-camera-photo";
 import Progress from "react-progressbar";
 
@@ -23,35 +23,26 @@ class App extends Component {
       croppedImage: "",
       progressText: "",
       textConfidence: null,
-      image: label,
-      crop: { x: 0, y: 0 },
-      zoom: 3,
-      aspect: 1,
-      croppedAreaPixels: null,
       courierService: null,
     };
 
     this.scheduler = createScheduler();
     this.worker1 = createWorker({
       logger: (m) => {
-        // if (m.status === "recognizing text") {
         console.log(m);
         this.setState({
           progress1: m.progress,
           progressText: m.status,
         });
-        // }
       },
     });
     this.worker2 = createWorker({
       logger: (m) => {
-        // if (m.status === "recognizing text") {
         console.log(m);
         this.setState({
           progress2: m.progress,
           progressText: m.status,
         });
-        // }
       },
     });
   }
@@ -61,7 +52,6 @@ class App extends Component {
     // need the refs.video to get the videoElement so the component has to be
     // mounted.
     this.cameraPhoto = new CameraPhoto(this.videoRef.current);
-    // console.log(this.cameraPhoto)
     this.loadResources();
   }
 
@@ -268,21 +258,6 @@ class App extends Component {
     };
     let dataUri = this.cameraPhoto.getDataUri(config);
 
-    if (result.codeResult.code.length > 20) {
-      this.setState(
-        {
-          // scanning: false,
-          capturedImage: [...this.state.capturedImage, dataUri],
-          // barcode: result.codeResult.code.slice(8),
-          barcode: "9461211899564892895626"
-        },
-        () => {
-          if (this.state.capturedImage.length === 1) {
-            this.doOCR(this.state.capturedImage[0]);
-          }
-        }
-      );
-    } else {
       this.setState(
         {
           // scanning: false,
@@ -295,7 +270,6 @@ class App extends Component {
           }
         }
       );
-    }
   }
 
   render() {
